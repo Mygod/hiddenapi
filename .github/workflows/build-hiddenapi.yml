@@ -15,7 +15,7 @@ on:
       lunch_target:
         description: AOSP lunch target for the build environment.
         required: true
-        default: aosp_cf_x86_64_only_phone-aosp_current-userdebug
+        default: aosp_arm64-eng
       commit_result:
         description: Commit hiddenapi-flags.csv back to this branch if it changed.
         required: true
@@ -38,8 +38,9 @@ jobs:
       AOSP_DIR: /home/runner/work/_temp/aosp
       DIST_DIR: /home/runner/work/_temp/aosp-dist
       AOSP_BRANCH: ${{ inputs.aosp_branch || 'android16-qpr2-release' }}
-      LUNCH_TARGET: ${{ inputs.lunch_target || 'aosp_cf_x86_64_only_phone-aosp_current-userdebug' }}
-      SYNC_JOBS: 4
+      LUNCH_TARGET: ${{ inputs.lunch_target || 'aosp_arm64-eng' }}
+      REPO_GROUPS: default,-darwin,-device,-cts,-tests
+      SYNC_JOBS: 2
       TARGET_CSV: out/soong/hiddenapi/hiddenapi-flags.csv
 
     steps:
@@ -109,10 +110,11 @@ jobs:
             --partial-clone \
             --clone-filter=blob:none \
             --depth=1 \
+            --groups="$REPO_GROUPS" \
             --no-clone-bundle \
             -u https://android.googlesource.com/platform/manifest \
             -b "$AOSP_BRANCH"
-          sync_aosp() {
+          sync_aosp_once() {
             /tmp/repo sync \
               --current-branch \
               --fail-fast \
@@ -120,13 +122,22 @@ jobs:
               --no-clone-bundle \
               --no-tags \
               --optimized-fetch \
-              -j"$1"
+              -j"$1" &
+            local sync_pid="$!"
+            local elapsed=0
+            while kill -0 "$sync_pid" 2>/dev/null; do
+              sleep 60
+              elapsed=$((elapsed + 60))
+              echo "repo sync still running after ${elapsed}s"
+              df -h "$AOSP_DIR"
+            done
+            wait "$sync_pid"
           }
-          if ! sync_aosp "$SYNC_JOBS"; then
+          if ! sync_aosp_once "$SYNC_JOBS"; then
             df -h
             df -ih
             du -sh "$AOSP_DIR" "$AOSP_DIR/.repo" 2>/dev/null || true
-            sync_aosp 1
+            sync_aosp_once 1
           fi
 
       - name: Record AOSP revision
