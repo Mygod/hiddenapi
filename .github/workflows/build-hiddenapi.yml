@@ -39,6 +39,7 @@ jobs:
       DIST_DIR: /home/runner/work/_temp/aosp-dist
       AOSP_BRANCH: ${{ inputs.aosp_branch || 'android16-qpr2-release' }}
       LUNCH_TARGET: ${{ inputs.lunch_target || 'aosp_cf_x86_64_only_phone-aosp_current-userdebug' }}
+      SYNC_JOBS: 4
       TARGET_CSV: out/soong/hiddenapi/hiddenapi-flags.csv
 
     steps:
@@ -111,13 +112,22 @@ jobs:
             --no-clone-bundle \
             -u https://android.googlesource.com/platform/manifest \
             -b "$AOSP_BRANCH"
-          /tmp/repo sync \
-            --current-branch \
-            --fail-fast \
-            --no-clone-bundle \
-            --no-tags \
-            --optimized-fetch \
-            -j"$(nproc)"
+          sync_aosp() {
+            /tmp/repo sync \
+              --current-branch \
+              --fail-fast \
+              --force-sync \
+              --no-clone-bundle \
+              --no-tags \
+              --optimized-fetch \
+              -j"$1"
+          }
+          if ! sync_aosp "$SYNC_JOBS"; then
+            df -h
+            df -ih
+            du -sh "$AOSP_DIR" "$AOSP_DIR/.repo" 2>/dev/null || true
+            sync_aosp 1
+          fi
 
       - name: Record AOSP revision
         run: |
