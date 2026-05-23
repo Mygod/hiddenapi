@@ -1,6 +1,11 @@
 name: Build hiddenapi flags
 
 on:
+  push:
+    branches:
+      - build-android-16.1-hiddenapi
+    paths:
+      - .github/workflows/build-hiddenapi.yml
   workflow_dispatch:
     inputs:
       aosp_branch:
@@ -32,6 +37,8 @@ jobs:
     env:
       AOSP_DIR: /mnt/aosp
       DIST_DIR: /mnt/aosp-dist
+      AOSP_BRANCH: ${{ inputs.aosp_branch || 'android16-qpr2-release' }}
+      LUNCH_TARGET: ${{ inputs.lunch_target || 'aosp_cf_x86_64_only_phone-aosp_current-userdebug' }}
       TARGET_CSV: out/soong/hiddenapi/hiddenapi-flags.csv
 
     steps:
@@ -103,7 +110,7 @@ jobs:
             --depth=1 \
             --no-clone-bundle \
             -u https://android.googlesource.com/platform/manifest \
-            -b "${{ inputs.aosp_branch }}"
+            -b "$AOSP_BRANCH"
           /tmp/repo sync \
             --current-branch \
             --fail-fast \
@@ -116,8 +123,8 @@ jobs:
         run: |
           set -euo pipefail
           {
-            echo "aosp_branch=${{ inputs.aosp_branch }}"
-            echo "lunch_target=${{ inputs.lunch_target }}"
+            echo "aosp_branch=$AOSP_BRANCH"
+            echo "lunch_target=$LUNCH_TARGET"
             echo "manifest_revision=$(git -C "$AOSP_DIR/.repo/manifests" rev-parse HEAD)"
             echo "manifest_subject=$(git -C "$AOSP_DIR/.repo/manifests" log -1 --format=%s)"
             echo "synced_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -128,7 +135,7 @@ jobs:
           set -euo pipefail
           cd "$AOSP_DIR"
           source build/envsetup.sh
-          lunch "${{ inputs.lunch_target }}"
+          lunch "$LUNCH_TARGET"
           m -j"$(nproc)" "$TARGET_CSV"
           cp "$TARGET_CSV" "$GITHUB_WORKSPACE/hiddenapi-flags.csv"
           sha256sum "$GITHUB_WORKSPACE/hiddenapi-flags.csv" | tee -a "$GITHUB_WORKSPACE/aosp-hiddenapi-build.txt"
@@ -136,14 +143,14 @@ jobs:
       - name: Upload hiddenapi flags
         uses: actions/upload-artifact@v4
         with:
-          name: hiddenapi-flags-${{ inputs.aosp_branch }}
+          name: hiddenapi-flags-${{ env.AOSP_BRANCH }}
           path: |
             hiddenapi-flags.csv
             aosp-hiddenapi-build.txt
           if-no-files-found: error
 
       - name: Commit generated flags
-        if: ${{ inputs.commit_result }}
+        if: ${{ github.event_name == 'push' || inputs.commit_result }}
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
