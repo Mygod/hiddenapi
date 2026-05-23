@@ -1,0 +1,157 @@
+name: Build hiddenapi flags
+
+on:
+  workflow_dispatch:
+    inputs:
+      aosp_branch:
+        description: AOSP manifest branch to sync.
+        required: true
+        default: android16-qpr2-release
+      lunch_target:
+        description: AOSP lunch target for the build environment.
+        required: true
+        default: aosp_cf_x86_64_only_phone-aosp_current-userdebug
+      commit_result:
+        description: Commit hiddenapi-flags.csv back to this branch if it changed.
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-hiddenapi-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build hiddenapi-flags.csv
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    env:
+      AOSP_DIR: /mnt/aosp
+      DIST_DIR: /mnt/aosp-dist
+      TARGET_CSV: out/soong/hiddenapi/hiddenapi-flags.csv
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Free runner disk space
+        run: |
+          set -euo pipefail
+          df -h
+          sudo rm -rf \
+            /opt/ghc \
+            /opt/hostedtoolcache/CodeQL \
+            /usr/local/lib/android/sdk \
+            /usr/local/share/boost \
+            /usr/share/dotnet
+          df -h
+
+      - name: Install host packages
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bc \
+            bison \
+            build-essential \
+            ccache \
+            curl \
+            flex \
+            g++-multilib \
+            gcc-multilib \
+            git \
+            git-lfs \
+            gnupg \
+            lib32ncurses-dev \
+            lib32z1-dev \
+            libbz2-dev \
+            libc6-dev-i386 \
+            libgl1-mesa-dev \
+            libncurses-dev \
+            libreadline-dev \
+            libssl-dev \
+            libxml2-utils \
+            lz4 \
+            rsync \
+            unzip \
+            x11proto-core-dev \
+            xsltproc \
+            zip \
+            zlib1g-dev
+
+      - name: Install repo tool
+        run: |
+          set -euo pipefail
+          curl -fsSL https://storage.googleapis.com/git-repo-downloads/repo -o /tmp/repo
+          chmod a+x /tmp/repo
+          /tmp/repo version
+
+      - name: Sync AOSP
+        run: |
+          set -euo pipefail
+          mkdir -p "$AOSP_DIR"
+          cd "$AOSP_DIR"
+          /tmp/repo init \
+            --partial-clone \
+            --clone-filter=blob:none \
+            --depth=1 \
+            --no-clone-bundle \
+            -u https://android.googlesource.com/platform/manifest \
+            -b "${{ inputs.aosp_branch }}"
+          /tmp/repo sync \
+            --current-branch \
+            --fail-fast \
+            --no-clone-bundle \
+            --no-tags \
+            --optimized-fetch \
+            -j"$(nproc)"
+
+      - name: Record AOSP revision
+        run: |
+          set -euo pipefail
+          {
+            echo "aosp_branch=${{ inputs.aosp_branch }}"
+            echo "lunch_target=${{ inputs.lunch_target }}"
+            echo "manifest_revision=$(git -C "$AOSP_DIR/.repo/manifests" rev-parse HEAD)"
+            echo "manifest_subject=$(git -C "$AOSP_DIR/.repo/manifests" log -1 --format=%s)"
+            echo "synced_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } | tee "$GITHUB_WORKSPACE/aosp-hiddenapi-build.txt"
+
+      - name: Build hiddenapi flags
+        run: |
+          set -euo pipefail
+          cd "$AOSP_DIR"
+          source build/envsetup.sh
+          lunch "${{ inputs.lunch_target }}"
+          m -j"$(nproc)" "$TARGET_CSV"
+          cp "$TARGET_CSV" "$GITHUB_WORKSPACE/hiddenapi-flags.csv"
+          sha256sum "$GITHUB_WORKSPACE/hiddenapi-flags.csv" | tee -a "$GITHUB_WORKSPACE/aosp-hiddenapi-build.txt"
+
+      - name: Upload hiddenapi flags
+        uses: actions/upload-artifact@v4
+        with:
+          name: hiddenapi-flags-${{ inputs.aosp_branch }}
+          path: |
+            hiddenapi-flags.csv
+            aosp-hiddenapi-build.txt
+          if-no-files-found: error
+
+      - name: Commit generated flags
+        if: ${{ inputs.commit_result }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add hiddenapi-flags.csv
+          if git diff --cached --quiet; then
+            echo "hiddenapi-flags.csv is unchanged."
+            exit 0
+          fi
+          git commit -m "Android 16.1"
+          git push origin "HEAD:${{ github.ref_name }}"
