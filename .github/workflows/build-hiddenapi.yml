@@ -35,8 +35,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 360
     env:
-      AOSP_DIR: ${{ runner.temp }}/aosp
-      DIST_DIR: ${{ runner.temp }}/aosp-dist
+      AOSP_DIR: /home/runner/work/_temp/aosp
+      DIST_DIR: /home/runner/work/_temp/aosp-dist
       AOSP_BRANCH: ${{ inputs.aosp_branch || 'android16-qpr2-release' }}
       LUNCH_TARGET: ${{ inputs.lunch_target || 'aosp_cf_x86_64_only_phone-aosp_current-userdebug' }}
       TARGET_CSV: out/soong/hiddenapi/hiddenapi-flags.csv
