@@ -10,8 +10,8 @@ Generation provenance:
 - generator commit: `275f4aea43867142f6f9057e605cfee172ea7f09`;
 - `dexdump`: Android SDK Build Tools 37.0.0;
 - input: 52 mounted `BOOTCLASSPATH` JARs;
-- output: 759,092 rows; and
-- SHA-256: `3f57977f6a689ad4487761d02e1c0f50fd5e833c33c73ba09a626b1c7ed3c4e5`.
+- output: 770,948 rows; and
+- SHA-256: `feb796be1bcc63c60e1bc8f77166fe2285b271564ed0b504e77d0d7df6ce6dd6`.
 
 Each row contains a DEX field or method descriptor followed by the runtime
 labels encoded for that member. ART defines the [encoded values and domain
